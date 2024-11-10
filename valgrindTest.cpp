@@ -274,6 +274,17 @@ struct Tree {
 
 
     Tree() : root(nullptr), elementCounter(0) {}
+    ~Tree() {
+        deleteWholeTree(root);
+    }
+
+    void deleteWholeTree(Node<T> * current) {
+        if (!current) return;
+
+        deleteWholeTree(current->left);
+        deleteWholeTree(current->right);
+        delete current;
+    }
 
 private:
     Node<T> *root;
