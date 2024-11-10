@@ -43,10 +43,10 @@ private:
 
 namespace config {
     // Enable to check that the tree is AVL balanced.
-    inline constexpr bool CHECK_DEPTH = false;
+    inline constexpr bool CHECK_DEPTH = true;
 
     // Disable if your implementation does not have parent pointers
-    inline constexpr bool PARENT_POINTERS = true;
+    inline constexpr bool PARENT_POINTERS = false;
 }
 
 template<typename T>
@@ -66,6 +66,11 @@ int calculateHeight(Node<T> *node) {
 }
 
 template<typename T>
+int calculateBalance(Node<T> *node) {
+    return node == nullptr ? 0 : calculateHeight(node->left) - calculateHeight(node->right);
+}
+
+template<typename T>
 Node<T> *rotateLeft(Node<T> *x) {
     Node<T> *y = x->right;
     Node<T> *B = y->left;
@@ -73,8 +78,8 @@ Node<T> *rotateLeft(Node<T> *x) {
     y->left = x;
     x->right = B;
 
-    y->height = 1 + std::max(calculateHeight(y->left), calculateHeight(y->right));
     x->height = 1 + std::max(calculateHeight(x->left), calculateHeight(x->right));
+    y->height = 1 + std::max(calculateHeight(y->left), calculateHeight(y->right));
 
     return y;
 }
@@ -82,16 +87,23 @@ Node<T> *rotateLeft(Node<T> *x) {
 template<typename T>
 Node<T> *rotateRight(Node<T> *y) {
     Node<T> *x = y->left;
-    Node<T> *B = x->left;
+    Node<T> *B = x->right;
 
-    x->left = y;
+    x->right = y;
     y->left = B;
 
     y->height = 1 + std::max(calculateHeight(y->left), calculateHeight(y->right));
     x->height = 1 + std::max(calculateHeight(x->left), calculateHeight(x->right));
 
-    return y;
+    return x;
 
+}
+
+template<typename T>
+Node<T> *findInorderSuccessor(Node<T> *current) {
+    Node<T> *tmp = current;
+    while (tmp->left) tmp = tmp->left;
+    return tmp;
 }
 
 //https://www.geeksforgeeks.org/insertion-in-an-avl-tree/
@@ -110,7 +122,6 @@ struct Tree {
             return recursiveFind(current->right, value);
         }
 
-        return current;
     }
 
     const T *find(const T &value) const {
@@ -118,18 +129,16 @@ struct Tree {
     };
 
     Node<T> *recursiveInsert(Node<T> *current, T value) {
-        if (!current)
+        if (!current) {
+            elementCounter++;
             return new Node<T>(value);
-
+        }
 
         if (value < current->value) {
             current->left = recursiveInsert(current->left, value);
-        }
-        else if (value > current->value) {
+        } else if (value > current->value) {
             current->right = recursiveInsert(current->right, value);
-        }
-
-        else return current;
+        } else return current;
 
         current->height = 1 + std::max(calculateHeight(current->left), calculateHeight(current->right));
 
@@ -158,12 +167,66 @@ struct Tree {
     }
 
     bool insert(T value) {
+        size_t tmp = elementCounter;
         root = recursiveInsert(root, value);
-        return true;
+        return tmp == elementCounter;
+    }
+
+    Node<T> *recursiveDelete(Node<T> *current, const T &value) {
+        if (!current) return current;
+
+        if (value < current->value) current->left = recursiveDelete(current->left, value);
+        else if (value > current->value) current->right = recursiveDelete(current->right, value);
+        else {
+            if ( !current->left || !current->right) {
+                Node<T> * tmp = current->left ? current->left : current->right;
+
+                if (!tmp) {
+                    tmp = current;
+                    current = nullptr;
+                } else *current = *tmp;
+
+                delete tmp;
+                elementCounter--;
+
+            } else {
+                Node<T> * tmp = findInorderSuccessor(current->right);
+                current->value = tmp->value;
+                current->right = recursiveDelete(current->right, tmp->value);
+            }
+        }
+
+        if (!current) return current;
+
+        current->height = 1 + std::max(calculateHeight(current->left), calculateHeight(current->right));
+        int balance = calculateBalance(current);
+
+        if (balance > 1 && calculateBalance(current->left) >= 0) {
+            return rotateRight(current);
+        }
+
+        if (balance > 1 && calculateBalance(current->left) < 0) {
+            current->left = rotateLeft(current->left);
+            return rotateRight(current);
+        }
+
+        if (balance < -1 && calculateBalance(current->right) <= 0) {
+            return rotateLeft(current);
+        }
+
+        if (balance < -1 && calculateBalance(current->right) > 0) {
+            current->right = rotateRight(current->right);
+            return rotateLeft(current);
+        }
+
+        return current;
+
     }
 
     bool erase(const T &value) {
-        return false;
+        size_t tmp = elementCounter;
+        root = recursiveDelete(root, value);
+        return tmp == elementCounter;
     }
 
     void inorder() {
@@ -178,8 +241,8 @@ struct Tree {
         if (!current) return;
 
         std::cout << current->value << std::endl;
-        inorderRecursive(current->left);
-        inorderRecursive(current->right);
+        preorderRecursive(current->left);
+        preorderRecursive(current->right);
     }
 
     void inorderRecursive(Node<T> *current) {
@@ -411,14 +474,16 @@ void my_test() {
 
     Tree<int> tree;
     std::vector<int> array({2, 5, 7, 8, 1, 0, 1, 2, 99, 1000, 324, 1343});
-    for (int i: array) {
-        //std::cout << i << std::endl;
+    for (int i = 0; i < 2000; ++i) {
         tree.insert(i);
     }
 
-    for (int i: array) {
-        std::cout << *tree.find(i) << std::endl;
-    }
+    auto ref = tree.find(1);
+    std::cout << *ref << std::endl;
+    tree.erase(1);
+    std::cout << *ref << std::endl;
+
+
 
 }
 
@@ -426,7 +491,6 @@ int main() {
 
     my_test();
 
-    /*
     try {
         std::cout << "Insert test..." << std::endl;
         test_insert();
@@ -450,6 +514,7 @@ int main() {
     } catch (const TestFailed &e) {
         std::cout << "Test failed: " << e.what() << std::endl;
     }
+    /*
      */
 }
 
