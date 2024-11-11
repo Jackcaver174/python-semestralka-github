@@ -1,53 +1,29 @@
 #ifndef __PROGTEST__
 
 #include <cassert>
-#include <cstdarg>
 #include <iomanip>
 #include <cstdint>
 #include <iostream>
 #include <memory>
 #include <limits>
 #include <optional>
+#include <algorithm>
+#include <bitset>
+#include <list>
 #include <array>
+#include <vector>
+#include <deque>
+#include <unordered_set>
+#include <unordered_map>
+#include <stack>
+#include <queue>
 #include <random>
 #include <type_traits>
-
-// We use std::set as a reference to check our implementation.
-// It is not available in progtest :)
-#include <set>
-
-template<typename T>
-struct Ref {
-    size_t size() const { return _data.size(); }
-
-    const T *find(const T &value) const {
-        auto it = _data.find(value);
-        if (it == _data.end()) return nullptr;
-        return &*it;
-    }
-
-    bool insert(const T &value) { return _data.insert(value).second; }
-
-    bool erase(const T &value) { return _data.erase(value); }
-
-    auto begin() const { return _data.begin(); }
-
-    auto end() const { return _data.end(); }
-
-private:
-    std::set<T> _data;
-};
+#include <utility>
+#include <map>
 
 #endif
 
-
-namespace config {
-    // Enable to check that the tree is AVL balanced.
-    inline constexpr bool CHECK_DEPTH = true;
-
-    // Disable if your implementation does not have parent pointers
-    inline constexpr bool PARENT_POINTERS = false;
-}
 
 template<typename T>
 struct Node {
@@ -55,8 +31,10 @@ struct Node {
     Node *parent, *left, *right;
 
     int height;
+    int subtree_size;
+    int id_node;
 
-    Node(T val) : value(val), parent(nullptr), left(nullptr), right(nullptr), height(1) {}
+    Node(T val, int _id_node) : value(val), parent(nullptr), left(nullptr), right(nullptr), height(1), subtree_size(1), id_node(_id_node) {}
 
 };
 
@@ -78,6 +56,13 @@ Node<T> *rotateLeft(Node<T> *x) {
     y->left = x;
     x->right = B;
 
+    if (B) B->parent = x;
+    y->parent = x->parent;
+    x->parent = y;
+
+    x->subtree_size = 1 + (x->left ? x->left->subtree_size : 0) + (x->right ? x->right->subtree_size : 0);
+    y->subtree_size = 1 + (y->left ? y->left->subtree_size : 0) + (y->right ? y->right->subtree_size : 0);
+
     x->height = 1 + std::max(calculateHeight(x->left), calculateHeight(x->right));
     y->height = 1 + std::max(calculateHeight(y->left), calculateHeight(y->right));
 
@@ -91,6 +76,13 @@ Node<T> *rotateRight(Node<T> *y) {
 
     x->right = y;
     y->left = B;
+
+    if (B) B->parent = y;
+    x->parent = y->parent;
+    y->parent = x;
+
+    y->subtree_size = 1 + (y->left ? y->left->subtree_size : 0) + (y->right ? y->right->subtree_size : 0);
+    x->subtree_size = 1 + (x->left ? x->left->subtree_size : 0) + (x->right ? x->right->subtree_size : 0);
 
     y->height = 1 + std::max(calculateHeight(y->left), calculateHeight(y->right));
     x->height = 1 + std::max(calculateHeight(x->left), calculateHeight(x->right));
@@ -107,157 +99,162 @@ Node<T> *findInorderSuccessor(Node<T> *current) {
 }
 
 //https://www.geeksforgeeks.org/insertion-in-an-avl-tree/
-//some code from this site is used here
+//code from this site is used here
 template<typename T>
 struct Tree {
     size_t size() const { return elementCounter; };
 
-    Node<T> *recursiveFind(Node<T> *current, const T &value) const {
-        if (!current || current->value == value)
-            return current;
+    bool empty() const { return size() == 0; };
 
-        if (value < current->value) {
-            return recursiveFind(current->left, value);
-        } else {
-            return recursiveFind(current->right, value);
-        }
-
+    const T &findIndexConst(size_t index) const {
+        return findByIndex(root, index)->value;
     }
 
-    const T *find(const T &value) const {
-        return &recursiveFind(root, value)->value;
-    };
+    T &findIndex(size_t index) const {
+        return findByIndex(root, index)->value;
+    }
 
-    Node<T> *recursiveInsert(Node<T> *current, T value) {
-        if (!current) {
-            elementCounter++;
-            return new Node<T>(value);
+    Node<T> *findByIndex(Node<T> *current, size_t index) const {
+        if (!current) return nullptr;
+
+        size_t left_size = current->left ? current->left->subtree_size : 0;
+
+        if (index == left_size) {
+            return current;
+        } else if (index < left_size) {
+            return findByIndex(current->left, index);
+        } else {
+            return findByIndex(current->right, index - left_size - 1);
+        }
+    }
+
+    T erase(size_t index) {
+        T ans = findIndex(index);
+        root = eraseAtIndex(root, index);
+        return ans;
+    }
+
+    Node<T> *eraseAtIndex(Node<T> *node, int index) {
+        if (!node) return nullptr;
+
+        int left_size = node->left ? node->left->subtree_size : 0;
+
+        if (index < left_size) {
+            node->left = eraseAtIndex(node->left, index);
+            if (node->left) node->left->parent = node;
+        } else if (index > left_size) {
+            node->right = eraseAtIndex(node->right, index - left_size - 1);
+            if (node->right) node->right->parent = node;
+        } else {
+            if (!node->left || !node->right) {
+                Node<T> *temp = node->left ? node->left : node->right;
+                if (temp) temp->parent = node->parent;
+                delete node;
+                return temp;
+            } else {
+                /*
+                Node<T> *successor = findInorderSuccessor(node->right);
+                node->value = successor->value;
+                node->right = eraseAtIndex(node->right, 0);
+                 */
+
+
+                // Node has two children
+                Node<T>* successor = findInorderSuccessor(node->right);
+
+                if (successor->parent != node) {
+                    // Update successor's parent's child
+                    successor->parent->left = successor->right;
+                    if (successor->right) successor->right->parent = successor->parent;
+
+                    // Successor takes node's right child
+                    successor->right = node->right;
+                    if (successor->right) successor->right->parent = successor;
+                }
+
+                // Successor takes node's left child
+                successor->left = node->left;
+                if (successor->left) successor->left->parent = successor;
+
+                // Successor takes node's parent
+                successor->parent = node->parent;
+                if (node->parent) {
+                    if (node->parent->left == node) node->parent->left = successor;
+                    else node->parent->right = successor;
+                } else {
+                    // Update root if node is root
+                    root = successor;
+                }
+
+                delete node;
+
+                // Recompute subtree sizes and heights
+                successor->subtree_size = 1 + (successor->left ? successor->left->subtree_size : 0) + (successor->right ? successor->right->subtree_size : 0);
+                successor->height = 1 + std::max(calculateHeight(successor->left), calculateHeight(successor->right));
+
+                return balance(successor);  // Balance from the successor’s new position
+
+            }
         }
 
-        if (value < current->value) {
-            current->left = recursiveInsert(current->left, value);
-        } else if (value > current->value) {
-            current->right = recursiveInsert(current->right, value);
-        } else return current;
+        node->subtree_size = 1 + (node->left ? node->left->subtree_size : 0) +
+                             (node->right ? node->right->subtree_size : 0);
+        node->height = 1 + std::max(calculateHeight(node->left), calculateHeight(node->right));
 
+        return balance(node);
+    }
+
+
+    Node<T> *balance(Node<T> *current) {
         current->height = 1 + std::max(calculateHeight(current->left), calculateHeight(current->right));
 
         int balance = calculateHeight(current->left) - calculateHeight(current->right);
 
-        if (balance > 1 && value < current->left->value) {
-            return rotateRight(current);
-        }
-
-        if (balance < -1 && value > current->right->value) {
-            return rotateLeft(current);
-        }
-
-        if (balance > 1 && value > current->left->value) {
-            current->left = rotateLeft(current->left);
-            return rotateRight(current);
-        }
-
-        if (balance < -1 && value < current->right->value) {
-            current->right = rotateRight(current->right);
-            return rotateLeft(current);
-        }
-
-        return current;
-
-    }
-
-    bool insert(T value) {
-        size_t tmp = elementCounter;
-        root = recursiveInsert(root, value);
-        return tmp == elementCounter;
-    }
-
-    Node<T> *recursiveDelete(Node<T> *current, const T &value) {
-        if (!current) return current;
-
-        if (value < current->value) current->left = recursiveDelete(current->left, value);
-        else if (value > current->value) current->right = recursiveDelete(current->right, value);
-        else {
-            if ( !current->left || !current->right) {
-                Node<T> * tmp = current->left ? current->left : current->right;
-
-                if (!tmp) {
-                    tmp = current;
-                    current = nullptr;
-                } else *current = *tmp;
-
-                delete tmp;
-                elementCounter--;
-
+        if (balance > 1) {
+            if (calculateHeight(current->left->left) >= calculateHeight(current->left->right)) {
+                return rotateRight(current);
             } else {
-                Node<T> * tmp = findInorderSuccessor(current->right);
-                current->value = tmp->value;
-                current->right = recursiveDelete(current->right, tmp->value);
+                current->left = rotateLeft(current->left);
+                return rotateRight(current);
             }
         }
 
-        if (!current) return current;
-
-        current->height = 1 + std::max(calculateHeight(current->left), calculateHeight(current->right));
-        int balance = calculateBalance(current);
-
-        if (balance > 1 && calculateBalance(current->left) >= 0) {
-            return rotateRight(current);
-        }
-
-        if (balance > 1 && calculateBalance(current->left) < 0) {
-            current->left = rotateLeft(current->left);
-            return rotateRight(current);
-        }
-
-        if (balance < -1 && calculateBalance(current->right) <= 0) {
-            return rotateLeft(current);
-        }
-
-        if (balance < -1 && calculateBalance(current->right) > 0) {
-            current->right = rotateRight(current->right);
-            return rotateLeft(current);
+        if (balance < -1) {
+            if (calculateHeight(current->right->right) >= calculateHeight(current->right->left)) {
+                return rotateLeft(current);
+            } else {
+                current->right = rotateRight(current->right);
+                return rotateLeft(current);
+            }
         }
 
         return current;
-
     }
 
-    bool erase(const T &value) {
-        size_t tmp = elementCounter;
-        root = recursiveDelete(root, value);
-        return tmp == elementCounter;
+    void insertIndex(int index, T value, int id) {
+        root = insertAtIndex(root, index, value, id);
     }
 
-    void inorder() {
-        inorderRecursive(root);
+    Node<T> *insertAtIndex(Node<T> *node, int index, T value, int id) {
+        if (!node) return new Node<T>(value, id);
+
+        int left_size = node->left ? node->left->subtree_size : 0;
+
+        if (index <= left_size) {
+            node->left = insertAtIndex(node->left, index, value, id);
+            node->left->parent = node;
+        } else {
+            node->right = insertAtIndex(node->right, index - left_size - 1, value, id);
+            node->right->parent = node;
+        }
+
+        node->subtree_size =
+                1 + (node->left ? node->left->subtree_size : 0) + (node->right ? node->right->subtree_size : 0);
+        node->height = 1 + std::max(calculateHeight(node->left), calculateHeight(node->right));
+
+        return balance(node);
     }
 
-    void preorder() {
-        preorderRecursive(root);
-    }
-
-    void preorderRecursive(Node<T> *current) {
-        if (!current) return;
-
-        std::cout << current->value << std::endl;
-        preorderRecursive(current->left);
-        preorderRecursive(current->right);
-    }
-
-    void inorderRecursive(Node<T> *current) {
-        if (!current) return;
-
-        inorderRecursive(current->left);
-        std::cout << current->value << std::endl;
-        inorderRecursive(current->right);
-
-    }
-
-    // Needed to test the structure of the tree.
-    // Replace Node with the real type of your nodes
-    // and implementations with the ones matching
-    // your attributes.
     struct TesterInterface {
         // using Node = ...
         static const Node<T> *root(const Tree *t) { return t->root; }
@@ -274,11 +271,12 @@ struct Tree {
 
 
     Tree() : root(nullptr), elementCounter(0) {}
+
     ~Tree() {
         deleteWholeTree(root);
     }
 
-    void deleteWholeTree(Node<T> * current) {
+    void deleteWholeTree(Node<T> *current) {
         if (!current) return;
 
         deleteWholeTree(current->left);
@@ -286,247 +284,318 @@ struct Tree {
         delete current;
     }
 
-private:
+
+//private:
     Node<T> *root;
     size_t elementCounter;
 
 };
 
+template<typename T>
+struct Array {
+    bool empty() const { return size() == 0; };
+
+    size_t size() const { return elementCount; };
+
+    const T &operator[](size_t index) const {
+        if (index > size())
+            throw std::out_of_range("Inserting out of range.");
+
+        return tree.findIndexConst(index);
+    }
+
+    T &operator[](size_t index) {
+        if (index > size())
+            throw std::out_of_range("Inserting out of range.");
+
+        return tree.findIndex(index);
+    }
+
+    Node<T> * findPointer(size_t index) {
+        return tree.findByIndex(tree.root, index);
+    }
+
+
+    void insert(size_t index, T value) {
+        //std::cout << "Index:" << index << std::endl;
+        //std::cout << "Size:" << size() << std::endl;
+
+        if (index > size())
+            throw std::out_of_range("Inserting out of range.");
+
+        tree.insertIndex(index, value, id++);
+        elementCount++;
+    }
+
+    T erase(size_t index) {
+        if (index > size())
+            throw std::out_of_range("Erasing out of range.");
+
+        elementCount--;
+        return tree.erase(index);
+    }
+
+    struct TesterInterface {
+        // using Node = ...
+        static const Node<T> *root(const Array *t) { return t->tree.root; }
+
+        // Parent of root must be nullptr, ignore if config::PARENT_POINTERS == false
+        static const Node<T> *parent(const Node<T> *n) { return n->parent; }
+
+        static const Node<T> *right(const Node<T> *n) { return n->right; }
+
+        static const Node<T> *left(const Node<T> *n) { return n->left; }
+
+        static const T &value(const Node<T> *n) { return n->value; }
+    };
+
+    Array() : elementCount(0), id(0) {}
+
+private:
+    Tree<T> tree;
+    size_t elementCount;
+    int id;
+
+};
+
+template<typename T>
+struct Queue {
+
+    bool empty() const { return array.empty();}
+
+    size_t size() const { return array.size();};
+
+    struct Ref {
+        Node<T> * pointer;
+        int id_ref;
+
+        Ref(Node<T> * _pointer, int _id_ref) :pointer(_pointer), id_ref(_id_ref) {}
+
+    };
+
+    Ref push_last(T x) {
+        array.insert(array.size(), x);
+
+        Node<T> * pointer = array.findPointer(array.size() - 1);
+        seen.insert(pointer->id_node);
+        //std::cout << "Adding id: " << pointer->id_node << std::endl;
+
+        return {pointer, pointer->id_node};
+        //return TODO
+    }
+
+    T pop_first() {
+        Node<T> * pointer = array.findPointer(0);
+        T ans = pointer->value;
+
+        //std::cout << "Removing id: " << pointer->id_node << std::endl;
+        seen.erase(pointer->id_node);
+
+        //T ans = array[0];
+        array.erase(0);
+        return ans;
+    }
+
+    size_t position(const Ref &it) const {
+        if ( !seen.contains(it.id_ref) ) {
+            std::cout << "trying to remove not existing element" << std::endl;
+        }
+
+
+        Node<T> * current = it.pointer;
+        size_t index = current->left ? current->left->subtree_size : 0;
+
+        while (current->parent) {
+            if (current == current->parent->right) index += 1 + (current->parent->left ? current->parent->left->subtree_size : 0);
+            current = current->parent;
+        }
+        return index;
+    };
+
+
+    void jump_ahead(const Ref &it, size_t positions) {
+        //printQueue();
+        size_t pos = position(it);
+        std::cout << "Element: " << it.pointer->value << " has position: " << pos << std::endl;
+        size_t newPos = std::max(0, (int)pos - (int)positions);
+        std::cout << "New position: " << newPos << std::endl;
+        T element = array[pos];
+
+        array.erase(pos);
+        array.insert(newPos, element);
+        //printQueue();
+
+    }
+
+    void printQueue() {
+        for (int i = 0; i < 10; ++i)
+            std::cout << array[std::min(i, 10)] << ", ";
+        std::cout << std::endl;
+    }
+
+
+    Queue() : id (0) {}
+
+private:
+    Array<T> array;
+    std::unordered_set<int> seen;
+    int id;
+
+};
 
 #ifndef __PROGTEST__
 
-struct TestFailed : std::runtime_error {
-    using std::runtime_error::runtime_error;
-};
-
-std::string fmt(const char *f, ...) {
-    va_list args1;
-    va_list args2;
-    va_start(args1, f);
-    va_copy(args2, args1);
-
-    std::string buf(vsnprintf(nullptr, 0, f, args1), '\0');
-    va_end(args1);
-
-    vsnprintf(buf.data(), buf.size() + 1, f, args2);
-    va_end(args2);
-
-    return buf;
-}
+////////////////// Dark magic, ignore ////////////////////////
 
 template<typename T>
-struct Tester {
-    Tester() = default;
+auto quote(const T &t) { return t; }
 
-    void size() const {
-        size_t r = ref.size();
-        size_t t = tested.size();
-        if (r != t) throw TestFailed(fmt("Size: got %zu but expected %zu.", t, r));
-    }
-
-    void find(const T &x) const {
-        auto r = ref.find(x);
-        auto t = tested.find(x);
-        bool found_r = r != nullptr;
-        bool found_t = t != nullptr;
-
-        if (found_r != found_t) _throw("Find mismatch", found_r);
-        if (found_r && *t != x) throw TestFailed("Find: found different value");
-    }
-
-    void insert(const T &x, bool check_tree_ = false) {
-        auto succ_r = ref.insert(x);
-        auto succ_t = tested.insert(x);
-        if (succ_r != succ_t) _throw("Insert mismatch", succ_r);
-        size();
-        if (check_tree_) check_tree();
-    }
-
-    void erase(const T &x, bool check_tree_ = false) {
-        bool succ_r = ref.erase(x);
-        auto succ_t = tested.erase(x);
-        if (succ_r != succ_t) _throw("Erase mismatch", succ_r);
-        size();
-        if (check_tree_) check_tree();
-    }
-
-    struct NodeCheckResult {
-        const T *min = nullptr;
-        const T *max = nullptr;
-        int depth = -1;
-        size_t size = 0;
-    };
-
-    void check_tree() const {
-        using TI = typename Tree<T>::TesterInterface;
-        auto ref_it = ref.begin();
-        bool check_value_failed = false;
-        auto check_value = [&](const T &v) {
-            if (check_value_failed) return;
-            check_value_failed = (ref_it == ref.end() || *ref_it != v);
-            if (!check_value_failed) ++ref_it;
-        };
-
-        auto r = check_node(TI::root(&tested), decltype(TI::root(&tested))(nullptr), check_value);
-        size_t t_size = tested.size();
-
-        if (t_size != r.size)
-            throw TestFailed(
-                    fmt("Check tree: size() reports %zu but expected %zu.", t_size, r.size));
-
-        if (check_value_failed)
-            throw TestFailed(
-                    "Check tree: element mismatch");
-
-        size();
-    }
-
-    template<typename Node, typename F>
-    NodeCheckResult check_node(const Node *n, const Node *p, F &check_value) const {
-        if (!n) return {};
-
-        using TI = typename Tree<T>::TesterInterface;
-        if constexpr (config::PARENT_POINTERS) {
-            if (TI::parent(n) != p) throw TestFailed("Parent mismatch.");
-        }
-
-        auto l = check_node(TI::left(n), n, check_value);
-        check_value(TI::value(n));
-        auto r = check_node(TI::right(n), n, check_value);
-
-        if (l.max && !(*l.max < TI::value(n)))
-            throw TestFailed("Max of left subtree is too big.");
-        if (r.min && !(TI::value(n) < *r.min))
-            throw TestFailed("Min of right subtree is too small.");
-
-        if (config::CHECK_DEPTH && abs(l.depth - r.depth) > 1)
-            throw TestFailed(fmt(
-                    "Tree is not avl balanced: left depth %i and right depth %i.",
-                    l.depth, r.depth
-            ));
-
-        return {
-                l.min ? l.min : &TI::value(n),
-                r.max ? r.max : &TI::value(n),
-                std::max(l.depth, r.depth) + 1, 1 + l.size + r.size
-        };
-    }
-
-    static void _throw(const char *msg, bool s) {
-        throw TestFailed(fmt("%s: ref %s.", msg, s ? "succeeded" : "failed"));
-    }
-
-    Tree<T> tested;
-    Ref<T> ref;
-};
-
-
-void test_insert() {
-    Tester<int> t;
-
-    for (int i = 0; i < 10; i++) t.insert(i, true);
-    for (int i = -10; i < 20; i++) t.find(i);
-
-    for (int i = 0; i < 10; i++) t.insert((1 + i * 7) % 17, true);
-    for (int i = -10; i < 20; i++) t.find(i);
+std::string quote(const std::string &s) {
+    std::string ret = "\"";
+    for (char c: s) if (c != '\n') ret += c; else ret += "\\n";
+    return ret + "\"";
 }
 
-void test_erase() {
-    Tester<int> t;
+#define STR_(a) #a
+#define STR(a) STR_(a)
 
-    for (int i = 0; i < 10; i++) t.insert((1 + i * 7) % 17, true);
-    for (int i = -10; i < 20; i++) t.find(i);
+#define CHECK_(a, b, a_str, b_str) do { \
+    auto _a = (a); \
+    decltype(a) _b = (b); \
+    if (_a != _b) { \
+      std::cout << "Line " << __LINE__ << ": Assertion " \
+        << a_str << " == " << b_str << " failed!" \
+        << " (lhs: " << quote(_a) << ")" << std::endl; \
+      fail++; \
+    } else ok++; \
+  } while (0)
 
-    for (int i = 3; i < 22; i += 2) t.erase(i, true);
-    for (int i = -10; i < 20; i++) t.find(i);
+#define CHECK(a, b) CHECK_(a, b, #a, #b)
 
-    for (int i = 0; i < 10; i++) t.insert((1 + i * 13) % 17 - 8, true);
-    for (int i = -10; i < 20; i++) t.find(i);
+#define CHECK_EX(expr, ex) do { \
+    try { \
+      (expr); \
+      fail++; \
+      std::cout << "Line " << __LINE__ << ": Expected " STR(expr) \
+        " to throw " #ex " but no exception was raised." << std::endl; \
+    } catch (const ex&) { ok++; \
+    } catch (...) { \
+      fail++; \
+      std::cout << "Line " << __LINE__ << ": Expected " STR(expr) \
+        " to throw " #ex " but got different exception." << std::endl; \
+    } \
+  } while (0)
 
-    for (int i = -4; i < 10; i++) t.erase(i, true);
-    for (int i = -10; i < 20; i++) t.find(i);
+////////////////// End of dark magic ////////////////////////
+
+
+void test1(int &ok, int &fail) {
+    Queue<int> Q;
+    CHECK(Q.empty(), true);
+    CHECK(Q.size(), 0);
+
+    constexpr int RUN = 10, TOT = 105;
+
+    for (int i = 0; i < TOT; i++) {
+        Q.push_last(i % RUN);
+        CHECK(Q.empty(), false);
+        CHECK(Q.size(), i + 1);
+    }
+
+    for (int i = 0; i < TOT; i++) {
+        CHECK(Q.pop_first(), i % RUN);
+        CHECK(Q.size(), TOT - 1 - i);
+    }
+
+    CHECK(Q.empty(), true);
 }
 
-enum RandomTestFlags : unsigned {
-    SEQ = 1, NO_ERASE = 2, CHECK_TREE = 4
-};
+void test2(int &ok, int &fail) {
+    Queue<int> Q;
+    CHECK(Q.empty(), true);
+    CHECK(Q.size(), 0);
+    std::vector<decltype(Q.push_last(0))> refs;
 
-void test_random(size_t size, unsigned flags = 0) {
-    Tester<size_t> t;
-    std::mt19937 my_rand(24707 + size);
+    constexpr int RUN = 10, TOT = 105;
 
-    bool seq = flags & SEQ;
-    bool erase = !(flags & NO_ERASE);
-    bool check_tree = flags & CHECK_TREE;
+    for (int i = 0; i < TOT; i++) {
+        refs.push_back(Q.push_last(i % RUN));
+        CHECK(Q.size(), i + 1);
+    }
 
-    for (size_t i = 0; i < size; i++)
-        t.insert(seq ? 2 * i : my_rand() % (3 * size), check_tree);
+    for (int i = 0; i < TOT; i++) CHECK(Q.position(refs[i]), i);
 
-    t.check_tree();
+    Q.jump_ahead(refs[0], 15);
+    Q.jump_ahead(refs[3], 0);
 
-    for (size_t i = 0; i < 3 * size + 1; i++) t.find(i);
+    CHECK(Q.size(), TOT);
+    //for (int i = 0; i < TOT; i++) CHECK(Q.position(refs[i]), i);
 
-    for (size_t i = 0; i < 30 * size; i++)
-        switch (my_rand() % 5) {
-            case 1:
-                t.insert(my_rand() % (3 * size), check_tree);
-                break;
-            case 2:
-                if (erase) t.erase(my_rand() % (3 * size), check_tree);
-                break;
-            default:
-                t.find(my_rand() % (3 * size));
-        }
+    Q.jump_ahead(refs[8], 100);
+    Q.jump_ahead(refs[9], 100);
+    Q.printQueue();
+    Q.jump_ahead(refs[7], 1);
 
-    t.check_tree();
+    static_assert(RUN == 10 && TOT >= 30);
+    for (int i: {9, 8, 0, 1, 2, 3, 4, 5, 7, 6})
+        CHECK(Q.pop_first(), i);
+
+    for (int i = 0; i < TOT * 2 / 3; i++) {
+        CHECK(Q.pop_first(), i % RUN);
+        CHECK(Q.size(), TOT - 11 - i);
+    }
+
+    CHECK(Q.empty(), false);
+}
+
+template<int TOT>
+void test_speed(int &ok, int &fail) {
+    Queue<int> Q;
+    CHECK(Q.empty(), true);
+    CHECK(Q.size(), 0);
+    std::vector<decltype(Q.push_last(0))> refs;
+
+    for (int i = 0; i < TOT; i++) {
+        refs.push_back(Q.push_last(i));
+        CHECK(Q.size(), i + 1);
+    }
+
+    for (int i = 0; i < TOT; i++) {
+        CHECK(Q.position(refs[i]), i);
+        Q.jump_ahead(refs[i], i);
+    }
+
+    for (int i = 0; i < TOT; i++) CHECK(Q.position(refs[i]), TOT - 1 - i);
+
+    for (int i = 0; i < TOT; i++) {
+        CHECK(Q.pop_first(), TOT - 1 - i);
+        CHECK(Q.size(), TOT - 1 - i);
+    }
+
+    CHECK(Q.empty(), true);
 }
 
 void my_test() {
+    Queue<int> q;
+    std::vector<decltype(q.push_last(0))> refs;
 
-    Tree<int> tree;
-    std::vector<int> array({2, 5, 7, 8, 1, 0, 1, 2, 99, 1000, 324, 1343});
-    for (int i = 0; i < 2000; ++i) {
-        tree.insert(i);
+
+    for (int i = 1; i < 10; ++i) {
+        refs.push_back(q.push_last(i));
     }
-
-    auto ref = tree.find(1);
-    std::cout << *ref << std::endl;
-    tree.erase(1);
-    std::cout << *ref << std::endl;
-
 
 
 }
 
 int main() {
+    //my_test();
+    int ok = 0, fail = 0;
+    if (!fail) test1(ok, fail);
+    if (!fail) test2(ok, fail);
+    if (!fail) test_speed<1'000>(ok, fail);
 
-    my_test();
-
-    try {
-        std::cout << "Insert test..." << std::endl;
-        test_insert();
-
-        std::cout << "Erase test..." << std::endl;
-        test_erase();
-
-        std::cout << "Tiny random test..." << std::endl;
-        test_random(20, CHECK_TREE);
-
-        std::cout << "Small random test..." << std::endl;
-        test_random(200, CHECK_TREE);
-
-        std::cout << "Big random test..." << std::endl;
-        test_random(50'000);
-
-        std::cout << "Big sequential test..." << std::endl;
-        test_random(50'000, SEQ);
-
-        std::cout << "All tests passed." << std::endl;
-    } catch (const TestFailed &e) {
-        std::cout << "Test failed: " << e.what() << std::endl;
-    }
-    /*
-     */
+    if (!fail) std::cout << "Passed all " << ok << " tests!" << std::endl;
+    else std::cout << "Failed " << fail << " of " << (ok + fail) << " tests." << std::endl;
 }
 
 #endif
